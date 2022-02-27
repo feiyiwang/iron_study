@@ -4,13 +4,13 @@ import tqdm
 
 # All the necessary paths
 # path to data in red_library
-freq_path = 'finngen/library-red/finngen_R9/genotype_plink_1.0/data/finngen_R9.afreq'
-event_path = 'finngen/library-red/finngen_R9/phenotype_1.0/data/finngen_R9_detailed_longitudinal.txt.gz'
-pca_path = 'finngen/library-red/finngen_R9/pca_1.0/data/finngen_R9.eigenvec.txt'
-sex_path = 'finngen/library-red/finngen_R9/phenotype_1.0/data/finngen_R9_minimum_1.0.txt.gz'
+freq_path = '/finngen/library-red/finngen_R9/genotype_plink_1.0/data/finngen_R9.afreq'
+event_path = '/finngen/library-red/finngen_R9/phenotype_1.0/data/finngen_R9_detailed_longitudinal_1.0.txt.gz'
+pca_path = '/finngen/library-red/finngen_R9/pca_1.0/data/finngen_R9.eigenvec.txt'
+sex_path = '/finngen/library-red/finngen_R9/phenotype_1.0/data/finngen_R9_minimum_1.0.txt.gz'
 # path to uploaded data
-snp_path = 'finngen/green/FeiyiWang/all_variants_and_proxies.csv'
-phecode_path = 'finngen/green/FeiyiWang/phecode_map.csv'
+snp_path = '/finngen/green/FeiyiWang/all_variants_and_proxies.csv'
+phecode_path = '/finngen/green/FeiyiWang/phecode_map.csv'
 
 
 # Obtain more accurate allele frequencies
@@ -64,12 +64,27 @@ for i in tqdm.tqdm(range(len(snp_list))):
     allele2 = np.select([(ped[6+2*i+1] == snp_ref[i]), (ped[6+2*i+1] != snp_ref[i])], [1, 0])
     dosage = allele1 + allele2
     exposure_matrix[snp_list[i]] = dosage
-# shape of exposure_matrix is 392649 by 2460
+# get read for the confounding matrix
+confounding = exposure_matrix[['finngen_id', 'sex']]
+# shape of exposure_matrix is 392649 by 2459
 # 392649 rows -> 392649 individuals collected in R9
-# 2460 cols -> 1 finngen_id + 1 sex + 2458 dosages
+# 2459 cols -> 1 finngen_id + 2458 dosages
+exposure_matrix = exposure_matrix.drop(columns=['sex'])
 exposure_matrix.to_csv('exposure_matrix.csv', index=None)
 # delete dataframes to release some memory
 del ped, freq, snp, demo
+
+
+# Build a matrix of 10 principal components of ancestry
+pca = pd.read(pca_path)
+confounding = confounding.merge(pca.iloc[:, 1:12], 'left', left_on='finngen_id', right_on='IID')
+# shape of exposure_matrix is 392649 by 12
+# 392649 rows -> 392649 individuals collected in R9
+# 12 cols -> 1 finngen_id + 1 sex + 10 principal components
+confounding = confounding.drop(columns=['IID'])
+confounding.to_csv('confounding.csv', index=None)
+# delete dataframes to release some memory
+del pca
 
 
 # Convert ICD codes to a list of phecodes
