@@ -88,7 +88,59 @@ del pca
 
 
 # Convert ICD codes to a list of phecodes
-# load data
+# 1. load data
 events = pd.read_csv(event_path, sep='\t')
 phecode_map = pd.read_csv(phecode_path)
 
+# 2. clean the event data
+# keep only icd9 and icd10
+events = events[events.ICDVER.isin(['9','10'])][['FINNGENID', 'SOURCE', 'EVENT_AGE', 'CODE1']]
+# remove n/a value
+events = events[~events.CODE1.isna()]
+# remove duplicates
+events = events[~events.duplicated(subset=['FINNGENID', 'CODE1'])]
+# split datasets by icd version
+events_icd9 = events[events.ICDVER == '9']
+events_icd10 = events[events.ICDVER == '10']
+icd9 = phecode_map[phecode_map.vocabulary_id == 'ICD9CM'][['code', 'phecode']]
+icd10 = phecode_map[phecode_map.vocabulary_id == 'ICD10CM'][['code', 'phecode']]
+# clean event data coded by icd9
+# 1) fix code with '}'
+events_icd9.loc[34308875, 'CODE1'] = '4059'
+# 2) remove codes with '_'
+events_icd9 = events_icd9[events_icd9.CODE1 != '____']
+# 3) fix codes with ':'
+events_icd9.loc[74832158, 'CODE1'] = '3018'
+events_icd9.loc[93924451, 'CODE1'] = '2152'
+# 4) fix codes with '-'
+to_fix = events_icd9[events_icd9.CODE1.str[-1] == '-'].CODE1.str[:-1]
+for i, item in to_fix.iteritems():
+    events_icd9.loc[i, 'CODE1'] = item
+# 5) remove codes with '*'
+events_icd9 = events_icd9[events_icd9.CODE1.str[-1] != '*']
+# 6) remove code with '"'
+events_icd9 = events_icd9.drop(76654182)
+# 7) replace codes ending with lower case with upper case
+to_fix = events_icd9[events_icd9.CODE1.str[-1].isin(['a', 'b', 'x'])].CODE1
+for i, item in to_fix.iteritems():
+    events_icd9.loc[i, 'CODE1'] = item.upper()
+
+# 3. preprocess the datasets
+def getSign(data):
+    sign = []
+    for i in tqdm.tqdm(data.icd):
+        if len(i) == 5:
+            df = data[data.icd.str.startswith(i[:-1])]
+            if len(df) == 1:
+                sign.append(1)
+            elif len(set(df.phecode)) == 1:
+                sign.append(i[:-1])
+            else:
+                sign.append(0)
+        else:
+            sign.append(1)
+    return sign
+
+icd9['icd'] = icd9.code.str.replace('.', '')
+icd9['sign'] = getSign(icd9)
+icd10['icd'] = icd10.code.str.replace('.', '')
