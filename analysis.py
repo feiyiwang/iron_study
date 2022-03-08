@@ -93,6 +93,9 @@ events = pd.read_csv(event_path, sep='\t')
 phecode_map = pd.read_csv(phecode_path)
 
 # 2. clean the event data
+# remove irrelevant codes
+events = events[~events.SOURCE.isin(['OPER_OUT','OPER_IN'])]
+events = events[(events.CATEGORY.str.startswith('ICD'))|(events.CATEGORY.str.match('\d+'))]
 # keep only icd9 and icd10
 events = events[events.ICDVER.isin(['9','10'])][['FINNGENID', 'SOURCE', 'EVENT_AGE', 'CODE1']]
 # remove n/a value
@@ -100,47 +103,131 @@ events = events[~events.CODE1.isna()]
 # remove duplicates
 events = events[~events.duplicated(subset=['FINNGENID', 'CODE1'])]
 # split datasets by icd version
-events_icd9 = events[events.ICDVER == '9']
-events_icd10 = events[events.ICDVER == '10']
-icd9 = phecode_map[phecode_map.vocabulary_id == 'ICD9CM'][['code', 'phecode']]
-icd10 = phecode_map[phecode_map.vocabulary_id == 'ICD10CM'][['code', 'phecode']]
-# clean event data coded by icd9
-# 1) fix code with '}'
-events_icd9.loc[34308875, 'CODE1'] = '4059'
-# 2) remove codes with '_'
-events_icd9 = events_icd9[events_icd9.CODE1 != '____']
-# 3) fix codes with ':'
-events_icd9.loc[74832158, 'CODE1'] = '3018'
-events_icd9.loc[93924451, 'CODE1'] = '2152'
-# 4) fix codes with '-'
-to_fix = events_icd9[events_icd9.CODE1.str[-1] == '-'].CODE1.str[:-1]
-for i, item in to_fix.iteritems():
-    events_icd9.loc[i, 'CODE1'] = item
-# 5) remove codes with '*'
-events_icd9 = events_icd9[events_icd9.CODE1.str[-1] != '*']
-# 6) remove code with '"'
-events_icd9 = events_icd9.drop(76654182)
-# 7) replace codes ending with lower case with upper case
+events_icd9 = events[events.ICDVER == '9'][['FINNGENID','EVENT_AGE','CODE1']]
+events_icd10 = events[events.ICDVER == '10'][['FINNGENID','EVENT_AGE','CODE1']]
+# replace codes ending with lower case with upper case
 to_fix = events_icd9[events_icd9.CODE1.str[-1].isin(['a', 'b', 'x'])].CODE1
 for i, item in to_fix.iteritems():
     events_icd9.loc[i, 'CODE1'] = item.upper()
 
-# 3. preprocess the datasets
-def getSign(data):
+# 3. process mapping dictionary
+phecode_map['icd'] = phecode_map.code.str.replace('.','')
+icd9 = phecode_map[phecode_map.vocabulary_id == 'ICD9CM'][['code', 'phecode','icd']]
+icd10 = phecode_map[phecode_map.vocabulary_id == 'ICD10CM'][['code', 'phecode','icd']]
+def get_signs(data):
     sign = []
     for i in tqdm.tqdm(data.icd):
         if len(i) == 5:
-            df = data[data.icd.str.startswith(i[:-1])]
+            df = data[data.icd.str.startswith(i[:4])]
             if len(df) == 1:
                 sign.append(1)
             elif len(set(df.phecode)) == 1:
-                sign.append(i[:-1])
+                sign.append(i[:4])
             else:
                 sign.append(0)
         else:
             sign.append(1)
     return sign
+icd9['sign'] = get_signs(icd9)
+icd10['sign'] = get_signs(icd10)
 
-icd9['icd'] = icd9.code.str.replace('.', '')
-icd9['sign'] = getSign(icd9)
-icd10['icd'] = icd10.code.str.replace('.', '')
+# 4. ICD 9 mapping
+# exact mapping
+events_icd9 = events_icd9.merge(icd9[['icd', 'phecode']], 'left', left_on='CODE1', right_on='icd')
+print(
+    len(events_icd9[~events_icd9.phecode.isna()]), '/',
+    len(events_icd9), '=',
+    len(events_icd9[~events_icd9.phecode.isna()])/len(events_icd9)
+)
+# 0.0%
+
+# mapping by the first 4 elements
+# if all the codes with the same first 4 elements have the same phecode
+icd9_ = icd9[~icd9.sign.isin([0, 1])][['phecode', 'sign']]
+icd9_ = icd9[~icd9_.duplicated()]
+
+
+def get_events_subset(data):
+    data_ = data[(data.phecode.isna())&(data.CODE1.str.len() == 5)]
+    data_['code_'] = data_.CODE1.str[:4]
+    data_ = data_[['FINNGENID', 'code_']]
+    data_['index'] = data_.index # index will change after merging
+    return data_
+
+
+events_icd9_ = get_events_subset(events_icd9)
+events_icd9_ = events_icd9_.merge(icd9[['sign', 'phecode']], 'left', left_on='code_', right_on='sign')
+events_icd9_ = events_icd9_[~events_icd9_.phecode.isna()]
+events_icd9.loc[events_icd9_['index'].tolist(), 'phecode'] = events_icd9_.phecode.tolist()
+print(
+    len(events_icd9[~events_icd9.phecode.isna()]), '/',
+    len(events_icd9), '=',
+    len(events_icd9[~events_icd9.phecode.isna()])/len(events_icd9)
+)
+# 29.2%
+
+# if these 5-digit Finnish codes can be converted to standardized 4-digit codes only
+events_icd9_ = get_events_subset(events_icd9)
+
+
+def get_phecodes(data, icd_map):
+    code = []
+    for i in tqdm.tqdm(data.code_):
+        try:
+            next_code = icd_map.loc[icd_map[icd_map.icd == i].index + 1, 'icd'].values[0]
+            if (len(next_code) != 5) or (next_code[:4] != i):
+                this_phecode = icd_map[icd_map.icd == i].phecode.values[0]
+                code.append(this_phecode)
+            else: # this code need further discussion
+                code.append('fail')
+        except IndexError: # this code_ does not exist in phecode_map
+            code.append('na')
+    return code
+
+
+events_icd9_['phecode'] = get_phecodes(events_icd9_, icd9)
+events_icd9_ = events_icd9_[~events_icd9_.phecode.isin(['fail', 'na'])]
+events_icd9.loc[events_icd9_['index'].tolist(), 'phecode'] = events_icd9_.phecode.tolist()
+print(
+    len(events_icd9[~events_icd9.phecode.isna()]), '/',
+    len(events_icd9), '=',
+    len(events_icd9[~events_icd9.phecode.isna()])/len(events_icd9)
+)
+# 68.7%
+
+# 5. ICD 10 mapping
+# exact mapping
+events_icd10 = events_icd10.merge(icd10[['icd', 'phecode']], 'left', left_on='CODE1', right_on='icd')
+print(
+    len(events_icd10[~events_icd10.phecode.isna()]), '/',
+    len(events_icd10), '=',
+    len(events_icd10[~events_icd10.phecode.isna()])/len(events_icd10)
+)
+# 63.4%
+
+# mapping by the first 4 elements
+# if all the codes with the same first 4 elements have the same phecode
+icd10_ = icd10[~icd10.sign.isin([0, 1])][['phecode', 'sign']]
+icd10_ = icd10[~icd10_.duplicated()]
+events_icd10_ = get_events_subset(events_icd10)
+events_icd10_ = events_icd10_.merge(icd10[['sign', 'phecode']], 'left', left_on='code_', right_on='sign')
+events_icd10_ = events_icd10_[~events_icd10_.phecode.isna()]
+events_icd10.loc[events_icd10_['index'].tolist(), 'phecode'] = events_icd10_.phecode.tolist()
+print(
+    len(events_icd10[~events_icd10.phecode.isna()]), '/',
+    len(events_icd10), '=',
+    len(events_icd10[~events_icd10.phecode.isna()])/len(events_icd10)
+)
+# 70.0%
+
+# if these 5-digit Finnish codes can be converted to standardized 4-digit codes only
+events_icd10_ = get_events_subset(events_icd10)
+events_icd10_['phecode'] = get_phecodes(events_icd10_, icd10)
+events_icd10_ = events_icd10_[~events_icd10_.phecode.isin(['fail', 'na'])]
+events_icd10.loc[events_icd10_['index'].tolist(), 'phecode'] = events_icd10_.phecode.tolist()
+print(
+    len(events_icd10[~events_icd10.phecode.isna()]), '/',
+    len(events_icd10), '=',
+    len(events_icd10[~events_icd10.phecode.isna()])/len(events_icd10)
+)
+#
