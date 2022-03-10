@@ -1,4 +1,3 @@
-import json
 import statsmodels.api as sm
 from analysis_utils import *
 
@@ -66,7 +65,7 @@ for i in tqdm.tqdm(range(len(snp_list))):
     exposure_matrix[snp_list[i]] = dosage
 # shape of exposure_matrix is 392649 by 2459
 # 392649 rows -> 392649 individuals collected in R9
-# 2459 cols -> 1 finngen_id + 2458 dosages
+# 2459 cols -> 1 finngen_id + 2458 SNPs
 exposure_matrix.to_csv('exposure_matrix.csv', index=None)
 # delete dataframes to release some memory
 del ped, freq, snp, demo
@@ -78,6 +77,10 @@ confounding = exposure_matrix[['finngen_id']]
 demo = pd.read_csv(sex_path, sep='\t')
 demo = demo.rename(columns={'FINNGENID': 'finngen_id', 'SEX': 'sex', 'BL_AGE': 'age'})
 confounding = confounding.merge(demo[['finngen_id', 'sex']], 'left')
+# 1 is female; 0 is male
+confounding['sex'] = np.select([(confounding.sex == 'female'),
+                                (confounding.sex == 'male'),
+                                (confounding.sex.isna())], [1, 0, ''])
 # add 10 principal components of ancestry to the data
 pca = pd.read(pca_path)
 confounding = confounding.merge(pca.iloc[:, 1:12], 'left', left_on='finngen_id', right_on='IID')
@@ -194,25 +197,19 @@ events_icd10_ = events_icd10_.merge(pd.DataFrame({'CODE1':code, 'phecode':phecod
 events_icd10_ = events_icd10_[~events_icd10_.phecode.isin('?')]
 events_icd10.loc[events_icd10_['index'].tolist(), 'phecode'] = events_icd10_.phecode.tolist()
 print_result(events_icd10)  # 91.0%
+events_icd10 = events_icd10[['FINNGENID', 'CODE1', 'phecode']]
 ''' For events_icd10_dup '''
-# 1) exact mapping
-icd10_dup_ = icd10_dup.icd.value_counts().to_frame()
-icd10_dup_['CODE1'] = icd10_dup_.index
-events_icd10_dup = events_icd10_dup.merge(icd10_dup_, 'left')
-# loop a new dataset to concat the events_icd10
-events_icd10_ = pd.DataFrame(columns=['FINNGENID', 'EVENT_AGE', 'CODE1', 'phecode'])
-for i, row in events_icd10_dup.iterrows():
-    if i%10000 == 0:
-        print(i)
-    phecode_list = icd10_dup.loc[icd10_dup.icd == row.CODE1, 'phecode'].tolist()
-    for j in phecode_list:
-        events_icd10_.loc[str(i)+'_'+str(j)] = [row.FINNGENID, row.EVENT_AGE, row.CODE1, j]
+# exact mapping
+# merge a new dataset to concat the events_icd10
+events_icd10_ = events_icd10_dup[~events_icd10_dup.duplicated()][['FINNGENID', 'CODE1']]
+events_icd10_ = events_icd10_.merge(icd10_dup[['icd', 'phecode']], left_on='CODE1', right_on='icd')
 events_icd10 = pd.concat([events_icd10, events_icd10_], axis=0)
-print_result(events_icd10)  # 91.0%
+print_result(events_icd10)  # 92.9%
 
 # 5. merge events and clean the data
+# icd10 accounts for 95.95% of all the codes in events
 events = pd.concat([events_icd10, events_icd9], axis=0)
-print_result(events)
+print_result(events) # 92.0%
 events.to_csv('events.csv', index=None)
 # get a list of unique phecodes for modeling
 phecode_list = sorted(phecode_map.phecode.unique().tolist())
@@ -235,22 +232,55 @@ for i in tqdm.tqdm(range(len(phecode_list))):
 # 392649 rows -> 392649 individuals collected in R9
 # 2459 cols -> 1 finngen_id + 1860 PheCodes
 outcome_matrix.to_csv('outcome_matrix.csv', index=None)
-with open('n_cases.json', 'w') as f:
-    json.dump(n_cases, f)
 # delete dataframes to release some memory
 del events
 
 
 # Build a for-loop for logistic regression
-phecode_sex = pd.read_csv(phecode_path3)
-stats = pd.DataFrame(columns=['Coef.','Std.Err.','z','P>|z|','phecode','n_cases'])
-for i in range()
+# 1. prepare a phecode definition table for sex and n_case
+phecode_path3 = '/finngen/green/FeiyiWang/phecode_sex.csv'
+phecode_sex = pd.read_csv(phecode_path3) # 166 sex-specified
+phecode_def = pd.DataFrame({'phecode':phecode_list, 'n_cases':n_cases})
+phecode_def = phecode_def[phecode_def.n_cases >= 100]
+phecode_def = phecode_def.merge(phecode_sex, 'left') # 147 sex-specified
+phecode_def['sex'] = np.select([(phecode_def.sex == 'Female'),
+                                (phecode_def.sex == 'Male'),
+                                (phecode_def.sex.isna())
+                                ], [1, 0, -1])
 
-# statistics
-x_train = pd.concat([data[['gre', 'gpa']], dummy_rank], axis=1)
-y_train = data['admit']
-X = sm.add_constant(x_train)
-est = sm.Logit(y_train, X).fit()
-a = est.summary2().tables[1].loc['gre',['Coef.','Std.Err.','z','P>|z|']]
-a['phecode'] = 8.1
-b.append(a)
+# shape of phecode_def is 1478 by 3
+# 1478 rows -> 1478 Phecodes
+# 3 cols -> 1 phecode_id + 1 n_cases + 1 sex
+phecode_def.to_csv('phecode_def.csv', index=None)
+
+# 2. clean all the matrices for modeling
+# remove 143 individuals without sex & age
+ids_to_remove = confounding[confounding.sex == ''].finngen_id.tolist()
+if ids_to_remove == confounding[confounding.age.isna()].finngen_id.tolist():
+    confounding = confounding[~confounding.finngen_id.isin(ids_to_remove)]
+    exposure_matrix = exposure_matrix[~exposure_matrix.finngen_id.isin(ids_to_remove)]
+    outcome_matrix = outcome_matrix[~outcome_matrix.finngen_id.isin(ids_to_remove)]
+
+# fix 15146 individuals without pca information. Replace them with 0s
+confounding = confounding.fillna(0.0)
+# check the distribution of confounding
+
+ax = confounding.plot.hist(column=['age'], alpha=0.5, figsize=(10, 8))
+
+stats = pd.DataFrame(columns=['Coef.','Std.Err.','z','P>|z|','exposure','outcome','n_cases', 'n_cohort'])
+for snp in tqdm.tqdm(exposure_matrix.columns[1:]):
+    x = pd.concat([exposure_matrix[[snp]], confounding.iloc[:, 1:]], axis=1)
+    x = sm.add_constant(x)
+    for _, row in phecode_def.iterrows():
+        y = outcome_matrix[[row.phecode]]
+        if type(row.sex) == int:
+            x = x[x.sex == row.sex]
+            x = x.drop(columns=['sex'])
+            y = y[y.index.isin(x.index)]
+        model = sm.Logit(y, x).fit()
+        stat = model.summary2().tables[1].loc[snp, ['Coef.', 'Std.Err.', 'z', 'P>|z|']]
+        stat['exposure'] = snp
+        stat['outcome'] = row.phecode
+        stat['n_cases'] = row.n_cases
+        stat['n_cohort'] = len(y)
+        stats = stats.append(stat)
