@@ -263,8 +263,8 @@ if ids_to_remove == confounding[confounding.age.isna()].finngen_id.tolist():
     exposure_matrix = exposure_matrix[~exposure_matrix.finngen_id.isin(ids_to_remove)]
     outcome_matrix = outcome_matrix[~outcome_matrix.finngen_id.isin(ids_to_remove)]
 
-# fix 15146 individuals without pca information. Replace them with 0s
-confounding = confounding.fillna(0.0)
+# remove 15146 individuals without pca information
+confounding = confounding[~confounding.isna()]#.fillna(0.0)
 # check the distribution of confounding
 
 ax = confounding.plot.hist(column=['age'], alpha=0.5, figsize=(10, 8))
@@ -316,3 +316,5 @@ for snp in tqdm.tqdm(exposure_matrix.columns[67:68]):
 end = datetime.datetime.now()
 print(end - start)
 # 1:02:29 for one snp
+
+
