@@ -1,3 +1,5 @@
+import datetime
+import multiprocessing as mp
 import statsmodels.api as sm
 from analysis_utils import *
 
@@ -267,13 +269,13 @@ confounding = confounding.fillna(0.0)
 
 ax = confounding.plot.hist(column=['age'], alpha=0.5, figsize=(10, 8))
 
-stats = pd.DataFrame(columns=['Coef.','Std.Err.','z','P>|z|','exposure','outcome','n_cases', 'n_cohort'])
+stats = pd.DataFrame(columns=['Coef.','Std.Err.','z','P>|z|','outcome','n_cases', 'n_cohort'])
 for snp in tqdm.tqdm(exposure_matrix.columns[1:]):
     x = pd.concat([exposure_matrix[[snp]], confounding.iloc[:, 1:]], axis=1)
     x = sm.add_constant(x)
     for _, row in phecode_def.iterrows():
         y = outcome_matrix[[row.phecode]]
-        if type(row.sex) == int:
+        if type(row.sex) > -1:
             x = x[x.sex == row.sex]
             x = x.drop(columns=['sex'])
             y = y[y.index.isin(x.index)]
@@ -284,3 +286,33 @@ for snp in tqdm.tqdm(exposure_matrix.columns[1:]):
         stat['n_cases'] = row.n_cases
         stat['n_cohort'] = len(y)
         stats = stats.append(stat)
+# 1:26:58 for one snp
+
+
+start = datetime.datetime.now()
+results_df = pd.DataFrame()
+for snp in tqdm.tqdm(exposure_matrix.columns[67:68]):
+    inputs = pd.concat([exposure_matrix[[snp]], confounding.iloc[:, 1:]], axis=1)
+    inputs = sm.add_constant(inputs)
+
+    def modeling(subset, x=inputs):
+        y = outcome_matrix[[subset[0]]]
+        if subset[2] > -1:
+            x = x[x.sex == subset[2]]
+            x = x.drop(columns=['sex'])
+            y = y[y.index.isin(x.index)]
+        model = sm.Logit(y, x).fit()
+        stat = model.summary2().tables[1].loc[snp, ['Coef.', 'Std.Err.', 'z', 'P>|z|']]
+        stat['outcome'] = subset[0]
+        stat['n_cases'] = subset[1]
+        stat['n_cohort'] = len(y)
+        return stat
+
+    pool = mp.Pool(processes=(mp.cpu_count() - 1))
+    results = pool.map(modeling, phecode_def.to_numpy())
+    pool.close()
+    pool.join()
+    results_df = pd.concat(results)
+end = datetime.datetime.now()
+print(end - start)
+# 1:02:29 for one snp
