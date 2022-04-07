@@ -64,6 +64,9 @@ for snp in tqdm.tqdm(exposure_matrix.columns):
             model = sm.Logit(y, x).fit()
             stat = model.summary2().tables[1].loc[snp, ['Coef.', 'Std.Err.', 'z', 'P>|z|']]
         except PerfectSeparationError:
+            # When event per variable is too low,
+            # the logistic model is under the risk of complete separation or quasi⁃complete separation.
+            # https://m.medsci.cn/article/show_article.do?id=606319405019
             stat = pd.Series({'Coef.': 0, 'Std.Err.': 0, 'z': 0, 'P>|z|': 0}, name=snp)
         stat['outcome'] = subset[2]
         stat['n_cases'] = subset[1]
