@@ -18,7 +18,7 @@ phecode_sex = pd.read_csv('/finngen/green/FeiyiWang/phecode_sex.csv') # 166 sex-
 # finngen ids are in the same order across the datasets
 confounding = confounding[confounding.PC1 != 0]
 confounding = confounding.drop(columns=['finngen_id'])
-exposure_matrix = exposure_matrix[snp_final.sandbox_format.to_lsit()]
+exposure_matrix = exposure_matrix[snp_final.sandbox_format.to_list()]
 exposure_matrix = exposure_matrix[exposure_matrix.index.isin(confounding.index)]
 outcome_matrix = outcome_matrix[outcome_matrix.index.isin(confounding.index)]
 outcome_matrix = outcome_matrix.drop(columns=['id'])
@@ -67,7 +67,9 @@ for snp in tqdm.tqdm(exposure_matrix.columns):
             # When event per variable is too low,
             # the logistic model is under the risk of complete separation or quasi⁃complete separation.
             # https://m.medsci.cn/article/show_article.do?id=606319405019
-            stat = pd.Series({'Coef.': 0, 'Std.Err.': 0, 'z': 0, 'P>|z|': 0}, name=snp)
+            stat = pd.Series({'Coef.': 0., 'Std.Err.': 0., 'z': 0., 'P>|z|': 0.}, name=snp)
+        except np.linalg.LinAlgError:
+            stat = pd.Series({'Coef.': 1., 'Std.Err.': 1., 'z': 1., 'P>|z|': 1.}, name=snp)
         stat['outcome'] = subset[2]
         stat['n_cases'] = subset[1]
         stat['n_cohort'] = len(y)
