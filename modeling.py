@@ -83,4 +83,5 @@ for snp in tqdm.tqdm(exposure_matrix.columns):
         results_df = results_df.append(res)
 end = datetime.datetime.now()
 print(end - start)
-# ~52 mins for one snp
+# ~50 mins for one snp
+# ~118 hours for the whole loop
