@@ -81,7 +81,7 @@ for snp in tqdm.tqdm(exposure_matrix.columns[:-1]):
             x = x.drop(columns=['sex'])
             y = y[y.index.isin(x.index)]
         try:
-            model = sm.Logit(y, x).fit(disp=0)
+            model = sm.Logit(y.astype(int), x).fit(disp=0)
             stat = model.summary2().tables[1].loc[snp, ['Coef.', 'Std.Err.', 'z', 'P>|z|']]
         except PerfectSeparationError:
             # When event per variable is too low,
