@@ -109,7 +109,7 @@ events = events[['id', 'vocabulary_id', 'code', 'count1']]
 events.to_csv('events.csv', index=None)
 # create a sex_df for createPhenotype() in R
 sex_df = confounding[confounding.sex != ''][['finngen_id', 'sex']]
-sex_df['sex'] = np.select([(sex_df.sex == 1), (sex_df.sex == 0)], ['M', 'F'])
+sex_df['sex'] = np.select([(sex_df.sex == 1), (sex_df.sex == 0)], ['F', 'M'])
 sex_df = sex_df.rename(columns={'finngen_id': 'id'})
 sex_df.to_csv('sex_df.csv', index=None)
 # the rest will be done in R
