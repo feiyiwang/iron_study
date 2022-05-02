@@ -112,7 +112,7 @@ for snp in tqdm.tqdm(exposure_matrix.columns[:-1]):
     results = pool.map(modeling, phecode_def.to_numpy())
     pool.close()
     pool.join()
-    for res in tqdm.tqdm(results):
+    for res in results:
         results_df = results_df.append(res)
 end = datetime.datetime.now()
 print(end - start)
