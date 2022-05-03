@@ -91,6 +91,7 @@ for snp in tqdm.tqdm(exposure_matrix.columns[:-1]):
             stat = pd.Series({'Coef.': num, 'Std.Err.': num, 'z': num, 'P>|z|': num}, name=snp)
             print('PerfectSeparationError: ', subset[2])
         except np.linalg.LinAlgError:
+            # singular matrix
             num = 3.
             stat = pd.Series({'Coef.': num, 'Std.Err.': num, 'z': num, 'P>|z|': num}, name=snp)
             print('LinAlgError: ', subset[2])
