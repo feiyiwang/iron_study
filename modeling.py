@@ -62,6 +62,7 @@ outcome_matrix.index = range(len(exposure_matrix))
 
 
 # 5. Build a for-loop for logistic regression
+# chr6_26090957_A_T, chr6_26092913_G_A, chr6_26104404_T_G
 start = datetime.datetime.now()
 results_df = pd.DataFrame(columns=['Coef.', 'Std.Err.', 'z', 'P>|z|', 'outcome', 'n_cases', 'n_cohort'])
 for snp in tqdm.tqdm(exposure_matrix.columns[:-1]):
@@ -117,5 +118,5 @@ for snp in tqdm.tqdm(exposure_matrix.columns[:-1]):
         results_df = results_df.append(res)
 end = datetime.datetime.now()
 print(end - start)
-# ~17 mins for one snp
-# ~39 hours for the whole loop
+# ~50 mins for one snp
+# ~118 hours for the whole loop

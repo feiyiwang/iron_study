@@ -101,9 +101,16 @@ events = events[(events.CATEGORY.str.startswith('ICD')) | (events.CATEGORY.str.m
 events = events[events.ICDVER.isin(['9', '10'])][['FINNGENID', 'SOURCE', 'CODE1', 'ICDVER']]
 # remove n/a value
 events = events[~events.CODE1.isna()]
+# add dot back to ICD codes
+events['code_len'] = events.CODE1.str.len()
+events_1 = events[events.code_len == 3]
+events_1['code'] = events_1.CODE1
+events_2 = events[events.code_len > 3]
+events_2['code'] = events_2.CODE1.str[:3]+'.'+events_2.CODE1.str[3:]
+events = pd.concat([events_1, events_2], axis=0)
 # add cols to events according to createPhenotypes requirements
 events['vocabulary_id'] = np.select([(events.ICDVER == '9'), (events.ICDVER == '10')], ['ICD9CM', 'ICD10CM'])
-events = events.rename(columns={'FINNGENID': 'id', 'CODE1': 'code'})
+events = events.rename(columns={'FINNGENID': 'id'})
 events['count1'] = 1
 events = events[['id', 'vocabulary_id', 'code', 'count1']]
 events.to_csv('events.csv', index=None)
