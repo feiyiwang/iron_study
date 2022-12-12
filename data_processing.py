@@ -2,10 +2,10 @@ from utils import *
 
 # All the necessary paths
 # path to data in red_library
-freq_path = '/finngen/library-red/finngen_R9/genotype_plink_1.0/data/finngen_R9.afreq'
-event_path = '/finngen/library-red/finngen_R9/phenotype_1.0/data/finngen_R9_detailed_longitudinal_1.0.txt.gz'
-pca_path = '/finngen/library-red/finngen_R9/pca_1.0/data/finngen_R9.eigenvec.txt'
-sex_path = '/finngen/library-red/finngen_R9/phenotype_1.0/data/finngen_R9_minimum_1.0.txt.gz'
+freq_path = '/finngen/library-red/finngen_R10/genotype_plink_1.0/data/finngen_R9.afreq'
+event_path = '/finngen/library-red/finngen_R10/phenotype_1.0/data/finngen_R9_detailed_longitudinal_1.0.txt.gz'
+pca_path = '/finngen/library-red/finngen_R10/pca_1.0/data/finngen_R9.eigenvec.txt'
+sex_path = '/finngen/library-red/finngen_R10/phenotype_1.0/data/finngen_R9_minimum_1.0.txt.gz'
 # path to the uploaded data
 snp_path = '/finngen/green/FeiyiWang/all_variants_and_proxies.csv'
 # source: R package - PheWAS
@@ -14,15 +14,30 @@ phecode_path = '/finngen/green/FeiyiWang/phecode_map.csv'
 phecode_path3 = '/finngen/green/FeiyiWang/phecode_sex.csv'
 
 
-# Obtain more accurate allele frequencies
+# Obtain allele frequencies
 # load data
 freq = pd.read_csv(freq_path, sep='\t')
 snp = pd.read_csv(snp_path)
-# left join snp and freq
-snp = snp.merge(freq[['ID', 'ALT_FREQS']], left_on='sandbox_format', right_on='ID')
-snp = snp.rename(columns={'ALT_FREQS': 'sandbox_af'})
+# left join snp and freq - negative direction
+snp['ID'] = 'chr'+snp.variant2_chromosome.astype(str)+'_'+snp.hg38_position.astype(str)+'_'+snp.variant2_ea+'_'+snp.variant2_nea
+snp = snp.merge(freq[['ID', 'ALT_FREQS']], 'left', on='ID').rename(columns={'ALT_FREQS': 'finn_eaf'})
+snp1 = snp[~snp.finn_eaf.isna()]
+snp2 = snp[snp.finn_eaf.isna()]
+# change the direction
+snp1['finn_eaf'] = 1 - snp1.finn_eaf
+snp1['direction'] = -1
+# left join snp and freq - positive direction
 # drop unnecessary cols
-snp = snp.drop(columns=['Unnamed: 0', 'ID'])
+snp2 = snp2.drop(columns=['finn_eaf'])
+snp2['ID'] = 'chr'+snp.variant2_chromosome.astype(str)+'_'+snp.hg38_position.astype(str)+'_'+snp.variant2_ea+'_'+snp.variant2_nea
+snp2 = snp2.merge(freq[['ID', 'ALT_FREQS']], 'left', on='ID').rename(columns={'ALT_FREQS': 'finn_eaf'})
+# add direction for positive ones and those failed to find in AF data
+snp21 = snp2[~snp2.finn_eaf.isna()]
+snp21['direction'] = 1
+snp22 = snp2[snp2.finn_eaf.isna()]
+snp22['direction'] = 0
+# merge all the subsets
+snp = pd.concat([snp1, snp21, snp22], axis=0)
 # save the updated snp dataframe
 snp.to_csv('all_variants_and_proxies.csv', index=None)
 
