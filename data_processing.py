@@ -135,3 +135,7 @@ sex_df['sex'] = np.select([(sex_df.sex == 1), (sex_df.sex == 0)], ['F', 'M'])
 sex_df = sex_df.rename(columns={'finngen_id': 'id'})
 sex_df.to_csv('sex_df.csv', index=None)
 # the rest will be done in R
+
+## Tips!!!
+# 1. check if the sex_df is correct, F/M is in the right order and align with the sex col in confounding table
+# 2. sort the snp list by #chr and hg38 position, ped file is in this order
